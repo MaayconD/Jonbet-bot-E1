@@ -1,1 +1,1 @@
-worker: python "DOUBLEHOUR FINAL.py"
+worker: python bot.py
