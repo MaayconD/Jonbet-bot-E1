@@ -7,7 +7,7 @@ CHAT_ID = "-1003965003838"
 
 URL = "https://jonbet.bet.br/api/singleplayer-originals/originals/roulette_games/recent/1"
 
-AVISAR_ANTES_SEGUNDOS = 15
+AVISAR_ANTES_SEGUNDOS = 45
 GALE_MAXIMO = 3
 
 STICKER_GREEN = "CAACAgEAAxkBAAEBuhtkFBbPbho5iUL3Cw0Zs2WBNdupaAACQgQAAnQVwEe3Q77HvZ8W3y8E"
@@ -18,7 +18,6 @@ fila_sinais = []
 processados = set()
 horarios_registrados = set()
 historico_resultados = []
-
 analises_gx = []
 
 sequencia_loss_atual = 0
@@ -67,6 +66,17 @@ def hora_br(data_api):
     ).astimezone(
         timezone(timedelta(hours=-3))
     ).replace(tzinfo=None)
+
+
+def salvar_no_historico(resultado):
+    historico_resultados.append(resultado)
+
+    limite = agora_br() - timedelta(minutes=10)
+
+    historico_resultados[:] = [
+        r for r in historico_resultados
+        if hora_br(r["created_at"]) >= limite
+    ]
 
 
 def verificar_virada_dia():
@@ -189,20 +199,31 @@ def ajustar_segundos_entrada(entrada_base):
 
     for resultado in historico_resultados:
         dt = hora_br(resultado["created_at"])
-        dt_minuto = dt.replace(second=0, microsecond=0)
 
-        if dt_minuto == minuto_referencia:
+        if dt.replace(second=0, microsecond=0) == minuto_referencia:
             resultados_minuto.append(dt)
 
     resultados_minuto.sort()
 
     if len(resultados_minuto) < 2:
+        print(
+            "⚠️ Não encontrou 2 resultados no minuto:",
+            minuto_referencia.strftime("%H:%M")
+        )
         return entrada_base.replace(second=0, microsecond=0)
 
     segundo_resultado = resultados_minuto[1]
     segundos_final = (segundo_resultado.second + 35) % 60
 
-    return entrada_base.replace(second=segundos_final, microsecond=0)
+    entrada_final = entrada_base.replace(second=segundos_final, microsecond=0)
+
+    print(
+        f"✅ Segundos ajustados | Ref: {minuto_referencia.strftime('%H:%M')} | "
+        f"2º horário: {segundo_resultado.strftime('%H:%M:%S')} | "
+        f"Entrada: {entrada_final.strftime('%H:%M:%S')}"
+    )
+
+    return entrada_final
 
 
 def registrar_sinal(entrada_dt, cor_entrada, texto_cor, extracao_dt, numero, cor_sorteada):
@@ -370,7 +391,9 @@ def verificar(resultado):
 
     dt = hora_br(resultado["created_at"])
 
-    if dt < sinal_ativo["entrada_dt"]:
+    entrada_minuto = sinal_ativo["entrada_dt"].replace(second=0, microsecond=0)
+
+    if dt < entrada_minuto:
         return
 
     cor = resultado["color"]
@@ -399,11 +422,7 @@ def processar_resultado(resultado, iniciar=False):
         return
 
     processados.add(resultado["id"])
-
-    historico_resultados.append(resultado)
-
-    if len(historico_resultados) > 500:
-        historico_resultados.pop(0)
+    salvar_no_historico(resultado)
 
     if iniciar:
         return
