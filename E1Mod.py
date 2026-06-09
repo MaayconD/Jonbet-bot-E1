@@ -2,13 +2,13 @@ import requests
 import time
 from datetime import datetime, timedelta, timezone
 
-TOKEN = "5483533126:AAGIfCbKAXj1dzJa7kgtZKcI83a2dVBdiJA"
-CHAT_ID = "-1003961010489"
+TOKEN = "8709380886:AAEu-CvNLEdQvezcE-MBcMDF-ZjGuwK1aZQ"
+CHAT_ID = "-1003965003838"
 
 URL = "https://jonbet.bet.br/api/singleplayer-originals/originals/roulette_games/recent/1"
 
-MINUTOS_ANALISE = [0, 10, 20, 30, 40, 50]
-AVISAR_ANTES_SEGUNDOS = 60
+AVISAR_ANTES_SEGUNDOS = 15
+GALE_MAXIMO = 3
 
 STICKER_GREEN = "CAACAgEAAxkBAAEBuhtkFBbPbho5iUL3Cw0Zs2WBNdupaAACQgQAAnQVwEe3Q77HvZ8W3y8E"
 STICKER_LOSS = "CAACAgEAAxkBAAEBuh9kFBbVKxciIe1RKvDQBeDu8WfhFAACXwIAAq-xwEfpc4OHHyAliS8E"
@@ -17,12 +17,17 @@ sinal_ativo = None
 fila_sinais = []
 processados = set()
 horarios_registrados = set()
+historico_resultados = []
+
+analises_gx = []
 
 sequencia_loss_atual = 0
 maior_sequencia_loss = 0
+maior_gx = 0
+data_stats = None
 
 stats = {
-    "GERAL": {"SG": 0, "G1": 0, "LOSS": 0}
+    "GERAL": {"SG": 0, "G1": 0, "G2": 0, "G3": 0, "LOSS": 0}
 }
 
 
@@ -30,11 +35,7 @@ def enviar(msg):
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={
-                "chat_id": CHAT_ID,
-                "text": msg,
-                "parse_mode": "Markdown"
-            },
+            data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"},
             timeout=10
         )
         print("Telegram:", r.status_code, r.text)
@@ -46,10 +47,7 @@ def enviar_sticker(sticker_id):
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendSticker",
-            data={
-                "chat_id": CHAT_ID,
-                "sticker": sticker_id
-            },
+            data={"chat_id": CHAT_ID, "sticker": sticker_id},
             timeout=10
         )
         print("Sticker:", r.status_code, r.text)
@@ -69,6 +67,26 @@ def hora_br(data_api):
     ).astimezone(
         timezone(timedelta(hours=-3))
     ).replace(tzinfo=None)
+
+
+def verificar_virada_dia():
+    global data_stats, stats, sequencia_loss_atual, maior_sequencia_loss, maior_gx, analises_gx
+
+    hoje = agora_br().date()
+
+    if data_stats is None:
+        data_stats = hoje
+        return
+
+    if hoje != data_stats:
+        stats = {"GERAL": {"SG": 0, "G1": 0, "G2": 0, "G3": 0, "LOSS": 0}}
+        sequencia_loss_atual = 0
+        maior_sequencia_loss = 0
+        maior_gx = 0
+        analises_gx = []
+        data_stats = hoje
+
+        enviar("🔄 *Novo dia iniciado! Estatísticas zeradas.*")
 
 
 def cor_nome(cor):
@@ -104,13 +122,16 @@ def buscar_resultados():
 def assertividade():
     sg = stats["GERAL"]["SG"]
     g1 = stats["GERAL"]["G1"]
+    g2 = stats["GERAL"]["G2"]
+    g3 = stats["GERAL"]["G3"]
     loss = stats["GERAL"]["LOSS"]
-    total = sg + g1 + loss
+
+    total = sg + g1 + g2 + g3 + loss
 
     if total == 0:
         return 0
 
-    return ((sg + g1) / total) * 100
+    return ((sg + g1 + g2 + g3) / total) * 100
 
 
 def texto_stats():
@@ -118,8 +139,11 @@ def texto_stats():
         "📈 *GERAL*\n"
         f"SG: {stats['GERAL']['SG']:02d} | "
         f"G1: {stats['GERAL']['G1']:02d} | "
+        f"G2: {stats['GERAL']['G2']:02d} | "
+        f"G3: {stats['GERAL']['G3']:02d} | "
         f"LOSS: {stats['GERAL']['LOSS']:02d} | "
-        f"SEQ: {maior_sequencia_loss:02d}\n"
+        f"SEQ: {maior_sequencia_loss:02d} | "
+        f"GX: {maior_gx:02d}\n"
         f"🎯 Assertividade: {assertividade():.2f}%"
     )
 
@@ -157,8 +181,32 @@ def registrar_resultado(tipo):
         sequencia_loss_atual = 0
 
 
+def ajustar_segundos_entrada(entrada_base):
+    minuto_referencia = entrada_base - timedelta(minutes=2)
+    minuto_referencia = minuto_referencia.replace(second=0, microsecond=0)
+
+    resultados_minuto = []
+
+    for resultado in historico_resultados:
+        dt = hora_br(resultado["created_at"])
+        dt_minuto = dt.replace(second=0, microsecond=0)
+
+        if dt_minuto == minuto_referencia:
+            resultados_minuto.append(dt)
+
+    resultados_minuto.sort()
+
+    if len(resultados_minuto) < 2:
+        return entrada_base.replace(second=0, microsecond=0)
+
+    segundo_resultado = resultados_minuto[1]
+    segundos_final = (segundo_resultado.second + 35) % 60
+
+    return entrada_base.replace(second=segundos_final, microsecond=0)
+
+
 def registrar_sinal(entrada_dt, cor_entrada, texto_cor, extracao_dt, numero, cor_sorteada):
-    chave = entrada_dt.strftime("%Y-%m-%d %H:%M")
+    chave = entrada_dt.strftime("%Y-%m-%d %H:%M:%S")
 
     if entrada_dt < agora_br() - timedelta(seconds=30):
         print("⚠️ Sinal antigo ignorado:", chave)
@@ -172,10 +220,10 @@ def registrar_sinal(entrada_dt, cor_entrada, texto_cor, extracao_dt, numero, cor
 
     sinal = {
         "entrada_dt": entrada_dt,
-        "hora": entrada_dt.strftime("%H:%M"),
+        "hora": entrada_dt.strftime("%H:%M:%S"),
         "cor": cor_entrada,
         "texto_cor": texto_cor,
-        "estrategia": "E1",
+        "estrategia": "E1 MODIFICADA",
         "extracao": extracao_dt.strftime("%H:%M:%S"),
         "numero": numero,
         "sorteado": cor_nome(cor_sorteada),
@@ -185,10 +233,10 @@ def registrar_sinal(entrada_dt, cor_entrada, texto_cor, extracao_dt, numero, cor
     fila_sinais.append(sinal)
     fila_sinais.sort(key=lambda x: x["entrada_dt"])
 
-    print(f"📌 Sinal registrado: E1 | Entrada {sinal['hora']} | {texto_cor}")
+    print(f"📌 Sinal registrado: E1 MODIFICADA | Entrada {sinal['hora']} | {texto_cor}")
 
 
-def gerar_estrategia_1(resultado):
+def gerar_e1_modificada(resultado):
     numero = resultado["roll"]
     cor = resultado["color"]
 
@@ -205,7 +253,8 @@ def gerar_estrategia_1(resultado):
         texto_cor = "⚫ PRETO"
 
     base = dt.replace(second=0, microsecond=0)
-    entrada = base + timedelta(minutes=numero)
+    entrada_base = base + timedelta(minutes=numero)
+    entrada = ajustar_segundos_entrada(entrada_base)
 
     registrar_sinal(
         entrada,
@@ -233,6 +282,8 @@ def tentar_enviar_proximo_sinal():
     if not fila_sinais:
         return
 
+    fila_sinais.sort(key=lambda x: x["entrada_dt"])
+
     proximo = fila_sinais[0]
     momento_envio = proximo["entrada_dt"] - timedelta(seconds=AVISAR_ANTES_SEGUNDOS)
 
@@ -243,17 +294,51 @@ def tentar_enviar_proximo_sinal():
 
     msg = (
         "💎 *JONBET DOUBLE VIP*\n\n"
-        "📊 *Estratégia:* E1\n"
+        "📊 *Estratégia:* E1 MODIFICADA\n"
         f"🕒 *Extração:* {sinal_ativo['extracao']}\n"
         f"🎲 *Número:* {sinal_ativo['numero']}\n"
         f"🎨 *Sorteado:* {sinal_ativo['sorteado']}\n\n"
         f"⏰ *ENTRADA:* {sinal_ativo['hora']}\n"
         f"🎯 *{sinal_ativo['texto_cor']}*\n"
-        "♻️ *ATÉ G1*"
+        "♻️ *ATÉ G3*"
     )
 
     print(msg)
     enviar(msg)
+
+
+def criar_analise_gx(sinal):
+    analise = {
+        "cor": sinal["cor"],
+        "gale_atual": GALE_MAXIMO + 1,
+        "inicio": agora_br()
+    }
+
+    analises_gx.append(analise)
+
+    print(f"📊 Análise GX iniciada para cor {cor_nome(sinal['cor'])} a partir do G4")
+
+
+def verificar_gx_virtual(resultado):
+    global maior_gx
+
+    if not analises_gx:
+        return
+
+    cor = resultado["color"]
+
+    for analise in analises_gx[:]:
+        if cor == analise["cor"]:
+            gale_win = analise["gale_atual"]
+
+            if gale_win > maior_gx:
+                maior_gx = gale_win
+                print(f"📊 Novo maior GX registrado: G{maior_gx}")
+
+            analises_gx.remove(analise)
+
+        else:
+            analise["gale_atual"] += 1
 
 
 def finalizar(texto, resultado_final):
@@ -290,21 +375,22 @@ def verificar(resultado):
 
     cor = resultado["color"]
 
-    if sinal_ativo["etapa"] == 0:
-        if cor == sinal_ativo["cor"]:
+    if cor == sinal_ativo["cor"]:
+        if sinal_ativo["etapa"] == 0:
             registrar_resultado("SG")
             finalizar("✅ *GREEN SG*", "GREEN")
         else:
-            sinal_ativo["etapa"] = 1
-            sinal_ativo["entrada_dt"] = dt + timedelta(seconds=1)
-            print("⏳ Aguardando G1...")
+            registrar_resultado(f"G{sinal_ativo['etapa']}")
+            finalizar(f"✅ *GREEN G{sinal_ativo['etapa']}*", "GREEN")
 
-    elif sinal_ativo["etapa"] == 1:
-        if cor == sinal_ativo["cor"]:
-            registrar_resultado("G1")
-            finalizar("✅ *GREEN G1*", "GREEN")
+    else:
+        if sinal_ativo["etapa"] < GALE_MAXIMO:
+            sinal_ativo["etapa"] += 1
+            sinal_ativo["entrada_dt"] = dt + timedelta(seconds=1)
+            print(f"⏳ Aguardando G{sinal_ativo['etapa']}...")
         else:
             registrar_resultado("LOSS")
+            criar_analise_gx(sinal_ativo)
             finalizar("⛔ *LOSS*", "LOSS")
 
 
@@ -314,24 +400,31 @@ def processar_resultado(resultado, iniciar=False):
 
     processados.add(resultado["id"])
 
-    dt = hora_br(resultado["created_at"])
-    minuto = dt.minute
-    segundo = dt.second
+    historico_resultados.append(resultado)
+
+    if len(historico_resultados) > 500:
+        historico_resultados.pop(0)
 
     if iniciar:
         return
 
+    verificar_gx_virtual(resultado)
     verificar(resultado)
 
-    if minuto in MINUTOS_ANALISE and 30 <= segundo <= 59:
-        gerar_estrategia_1(resultado)
+    dt = hora_br(resultado["created_at"])
+    segundo = dt.second
+
+    if 30 <= segundo <= 59:
+        gerar_e1_modificada(resultado)
 
 
-enviar("✅ *Bot iniciado com sucesso!*")
+enviar("✅ *Bot iniciado com sucesso!*\n\n🎯 Estratégia ativa: *E1 MODIFICADA ATÉ G3*")
 
 primeira_leitura = True
 
 while True:
+    verificar_virada_dia()
+
     dados = buscar_resultados()
 
     if not dados:
