@@ -7,7 +7,7 @@ CHAT_ID = "-1003965003838"
 
 URL = "https://jonbet.bet.br/api/singleplayer-originals/originals/roulette_games/recent/1"
 
-AVISAR_ANTES_SEGUNDOS = 45
+AVISAR_ANTES_SEGUNDOS = 15
 GALE_MAXIMO = 3
 
 STICKER_GREEN = "CAACAgEAAxkBAAEBuhtkFBbPbho5iUL3Cw0Zs2WBNdupaAACQgQAAnQVwEe3Q77HvZ8W3y8E"
@@ -26,7 +26,13 @@ maior_gx = 0
 data_stats = None
 
 stats = {
-    "GERAL": {"SG": 0, "G1": 0, "G2": 0, "G3": 0, "LOSS": 0}
+    "GERAL": {
+        "SG": 0,
+        "G1": 0,
+        "G2": 0,
+        "G3": 0,
+        "LOSS": 0
+    }
 }
 
 
@@ -34,7 +40,11 @@ def enviar(msg):
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"},
+            data={
+                "chat_id": CHAT_ID,
+                "text": msg,
+                "parse_mode": "Markdown"
+            },
             timeout=10
         )
         print("Telegram:", r.status_code, r.text)
@@ -46,7 +56,10 @@ def enviar_sticker(sticker_id):
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendSticker",
-            data={"chat_id": CHAT_ID, "sticker": sticker_id},
+            data={
+                "chat_id": CHAT_ID,
+                "sticker": sticker_id
+            },
             timeout=10
         )
         print("Sticker:", r.status_code, r.text)
@@ -89,7 +102,16 @@ def verificar_virada_dia():
         return
 
     if hoje != data_stats:
-        stats = {"GERAL": {"SG": 0, "G1": 0, "G2": 0, "G3": 0, "LOSS": 0}}
+        stats = {
+            "GERAL": {
+                "SG": 0,
+                "G1": 0,
+                "G2": 0,
+                "G3": 0,
+                "LOSS": 0
+            }
+        }
+
         sequencia_loss_atual = 0
         maior_sequencia_loss = 0
         maior_gx = 0
@@ -151,9 +173,8 @@ def texto_stats():
         f"G1: {stats['GERAL']['G1']:02d} | "
         f"G2: {stats['GERAL']['G2']:02d} | "
         f"G3: {stats['GERAL']['G3']:02d} | "
-        f"LOSS: {stats['GERAL']['LOSS']:02d} | "
-        f"SEQ: {maior_sequencia_loss:02d} | "
-        f"GX: {maior_gx:02d}\n"
+        f"LOSS: {stats['GERAL']['LOSS']:02d}\n"
+        f"SEQ LOSS: {maior_sequencia_loss:02d} | GX: {maior_gx:02d}\n"
         f"🎯 Assertividade: {assertividade():.2f}%"
     )
 
