@@ -7,33 +7,31 @@ CHAT_ID = "-1003965003838"
 
 URL = "https://jonbet.bet.br/api/singleplayer-originals/originals/roulette_games/recent/1"
 
+MINUTOS_ANALISE = [0, 10, 20, 30, 40, 50]
 AVISAR_ANTES_SEGUNDOS = 15
-GALE_MAXIMO = 3
 
 STICKER_GREEN = "CAACAgEAAxkBAAEBuhtkFBbPbho5iUL3Cw0Zs2WBNdupaAACQgQAAnQVwEe3Q77HvZ8W3y8E"
 STICKER_LOSS = "CAACAgEAAxkBAAEBuh9kFBbVKxciIe1RKvDQBeDu8WfhFAACXwIAAq-xwEfpc4OHHyAliS8E"
 
+MODO = "PRETO"  # PRETO ou RECUPERACAO
+
 sinal_ativo = None
-fila_sinais = []
+fila_horarios = []
 processados = set()
 horarios_registrados = set()
-historico_resultados = []
-analises_gx = []
 
-sequencia_loss_atual = 0
-maior_sequencia_loss = 0
-maior_gx = 0
+tentativas_horario = 0
+
 data_stats = None
 
 stats = {
-    "GERAL": {
-        "SG": 0,
-        "G1": 0,
-        "G2": 0,
-        "G3": 0,
-        "LOSS": 0
-    }
+    "GREEN": 0,
+    "LOSS": 0
 }
+
+sequencia_loss_atual = 0
+maior_sequencia_loss = 0
+maior_gale = 0
 
 
 def enviar(msg):
@@ -81,46 +79,6 @@ def hora_br(data_api):
     ).replace(tzinfo=None)
 
 
-def salvar_no_historico(resultado):
-    historico_resultados.append(resultado)
-
-    limite = agora_br() - timedelta(minutes=10)
-
-    historico_resultados[:] = [
-        r for r in historico_resultados
-        if hora_br(r["created_at"]) >= limite
-    ]
-
-
-def verificar_virada_dia():
-    global data_stats, stats, sequencia_loss_atual, maior_sequencia_loss, maior_gx, analises_gx
-
-    hoje = agora_br().date()
-
-    if data_stats is None:
-        data_stats = hoje
-        return
-
-    if hoje != data_stats:
-        stats = {
-            "GERAL": {
-                "SG": 0,
-                "G1": 0,
-                "G2": 0,
-                "G3": 0,
-                "LOSS": 0
-            }
-        }
-
-        sequencia_loss_atual = 0
-        maior_sequencia_loss = 0
-        maior_gx = 0
-        analises_gx = []
-        data_stats = hoje
-
-        enviar("🔄 *Novo dia iniciado! Estatísticas zeradas.*")
-
-
 def cor_nome(cor):
     return {
         0: "⚪ BRANCO",
@@ -151,38 +109,53 @@ def buscar_resultados():
         return None
 
 
-def assertividade():
-    sg = stats["GERAL"]["SG"]
-    g1 = stats["GERAL"]["G1"]
-    g2 = stats["GERAL"]["G2"]
-    g3 = stats["GERAL"]["G3"]
-    loss = stats["GERAL"]["LOSS"]
+def verificar_virada_dia():
+    global data_stats, stats, sequencia_loss_atual, maior_sequencia_loss, maior_gale
+    global fila_horarios, horarios_registrados, tentativas_horario, MODO, sinal_ativo
 
-    total = sg + g1 + g2 + g3 + loss
+    hoje = agora_br().date()
+
+    if data_stats is None:
+        data_stats = hoje
+        return
+
+    if hoje != data_stats:
+        stats = {
+            "GREEN": 0,
+            "LOSS": 0
+        }
+
+        sequencia_loss_atual = 0
+        maior_sequencia_loss = 0
+        maior_gale = 0
+
+        fila_horarios = []
+        horarios_registrados = set()
+        tentativas_horario = 0
+
+        MODO = "PRETO"
+        sinal_ativo = None
+
+        data_stats = hoje
+
+        enviar("🔄 *Novo dia iniciado! Estatísticas zeradas.*")
+
+
+def assertividade():
+    total = stats["GREEN"] + stats["LOSS"]
 
     if total == 0:
         return 0
 
-    return ((sg + g1 + g2 + g3) / total) * 100
-
-
-def texto_stats():
-    return (
-        "📈 *GERAL*\n"
-        f"SG: {stats['GERAL']['SG']:02d} | "
-        f"G1: {stats['GERAL']['G1']:02d} | "
-        f"G2: {stats['GERAL']['G2']:02d} | "
-        f"G3: {stats['GERAL']['G3']:02d} | "
-        f"LOSS: {stats['GERAL']['LOSS']:02d}\n"
-        f"SEQ LOSS: {maior_sequencia_loss:02d} | GX: {maior_gx:02d}\n"
-        f"🎯 Assertividade: {assertividade():.2f}%"
-    )
+    return (stats["GREEN"] / total) * 100
 
 
 def texto_sinais_pendentes():
+    agora = agora_br()
+
     pendentes = [
-        s for s in fila_sinais
-        if s["entrada_dt"] >= agora_br() - timedelta(seconds=30)
+        s for s in fila_horarios
+        if s["entrada_dt"] >= agora - timedelta(seconds=30)
     ]
 
     if not pendentes:
@@ -198,87 +171,112 @@ def texto_sinais_pendentes():
     return "\n".join(linhas)
 
 
-def registrar_resultado(tipo):
-    global sequencia_loss_atual, maior_sequencia_loss
-
-    stats["GERAL"][tipo] += 1
-
-    if tipo == "LOSS":
-        sequencia_loss_atual += 1
-
-        if sequencia_loss_atual > maior_sequencia_loss:
-            maior_sequencia_loss = sequencia_loss_atual
-    else:
-        sequencia_loss_atual = 0
-
-
-def ajustar_segundos_entrada(entrada_base):
-    minuto_referencia = entrada_base - timedelta(minutes=2)
-    minuto_referencia = minuto_referencia.replace(second=0, microsecond=0)
-
-    resultados_minuto = []
-
-    for resultado in historico_resultados:
-        dt = hora_br(resultado["created_at"])
-
-        if dt.replace(second=0, microsecond=0) == minuto_referencia:
-            resultados_minuto.append(dt)
-
-    resultados_minuto.sort()
-
-    if len(resultados_minuto) < 2:
-        print(
-            "⚠️ Não encontrou 2 resultados no minuto:",
-            minuto_referencia.strftime("%H:%M")
-        )
-        return entrada_base.replace(second=0, microsecond=0)
-
-    segundo_resultado = resultados_minuto[1]
-    segundos_final = (segundo_resultado.second + 35) % 60
-
-    entrada_final = entrada_base.replace(second=segundos_final, microsecond=0)
-
-    print(
-        f"✅ Segundos ajustados | Ref: {minuto_referencia.strftime('%H:%M')} | "
-        f"2º horário: {segundo_resultado.strftime('%H:%M:%S')} | "
-        f"Entrada: {entrada_final.strftime('%H:%M:%S')}"
+def texto_stats():
+    return (
+        "📈 *GERAL*\n"
+        f"GREEN: {stats['GREEN']:02d} | LOSS: {stats['LOSS']:02d}\n"
+        f"SEQ: {maior_sequencia_loss:02d} | GX: {maior_gale:02d}\n\n"
+        f"🎯 Assertividade: {assertividade():.2f}%"
     )
 
-    return entrada_final
+
+def registrar_green():
+    global sequencia_loss_atual
+
+    stats["GREEN"] += 1
+    sequencia_loss_atual = 0
 
 
-def registrar_sinal(entrada_dt, cor_entrada, texto_cor, extracao_dt, numero, cor_sorteada):
-    chave = entrada_dt.strftime("%Y-%m-%d %H:%M:%S")
+def registrar_loss():
+    global sequencia_loss_atual, maior_sequencia_loss
 
-    if entrada_dt < agora_br() - timedelta(seconds=30):
-        print("⚠️ Sinal antigo ignorado:", chave)
-        return
+    stats["LOSS"] += 1
+    sequencia_loss_atual += 1
 
-    if chave in horarios_registrados:
-        print("⚠️ Sinal duplicado ignorado:", chave)
-        return
+    if sequencia_loss_atual > maior_sequencia_loss:
+        maior_sequencia_loss = sequencia_loss_atual
 
-    horarios_registrados.add(chave)
 
-    sinal = {
-        "entrada_dt": entrada_dt,
-        "hora": entrada_dt.strftime("%H:%M:%S"),
-        "cor": cor_entrada,
-        "texto_cor": texto_cor,
-        "estrategia": "E1 MODIFICADA",
+def atualizar_gx(gale):
+    global maior_gale
+
+    if gale > maior_gale:
+        maior_gale = gale
+
+
+def enviar_apuracao(texto, resultado_final):
+    if resultado_final == "GREEN":
+        enviar_sticker(STICKER_GREEN)
+    elif resultado_final == "LOSS":
+        enviar_sticker(STICKER_LOSS)
+
+    msg = (
+        f"{texto}\n\n"
+        "📊 *APURAÇÃO*\n\n"
+        f"{texto_sinais_pendentes()}\n\n"
+        f"{texto_stats()}"
+    )
+
+    print(msg)
+    enviar(msg)
+
+
+def montar_msg_sinal(sinal):
+    return (
+        "💎 *JONBET DOUBLE VIP*\n\n"
+        f"📊 *Estratégia:* {sinal['estrategia']}\n"
+        f"🕒 *Extração:* {sinal['extracao']}\n"
+        f"🎲 *Número:* {sinal['numero']}\n"
+        f"🎨 *Sorteado:* {sinal['sorteado']}\n\n"
+        f"⏰ *ENTRADA:* {sinal['hora']}\n"
+        f"🎯 *{sinal['texto_cor']}*\n"
+        f"♻️ *ATÉ G{sinal['max_gale']}*"
+    )
+
+
+def enviar_sinal(sinal):
+    msg = montar_msg_sinal(sinal)
+    print(msg)
+    enviar(msg)
+
+
+def criar_sinal_preto(extracao_dt, numero, cor_sorteada):
+    return {
+        "estrategia": "PRETO",
+        "entrada_dt": agora_br() + timedelta(seconds=1),
+        "hora": (agora_br() + timedelta(seconds=1)).strftime("%H:%M:%S"),
+        "cor": 2,
+        "texto_cor": "⚫ PRETO",
         "extracao": extracao_dt.strftime("%H:%M:%S"),
         "numero": numero,
         "sorteado": cor_nome(cor_sorteada),
-        "etapa": 0
+        "etapa": 0,
+        "max_gale": 5
     }
 
-    fila_sinais.append(sinal)
-    fila_sinais.sort(key=lambda x: x["entrada_dt"])
 
-    print(f"📌 Sinal registrado: E1 MODIFICADA | Entrada {sinal['hora']} | {texto_cor}")
+def iniciar_sinal_preto(resultado):
+    global sinal_ativo, MODO
+
+    if MODO != "PRETO":
+        return
+
+    if sinal_ativo is not None:
+        return
+
+    dt = hora_br(resultado["created_at"])
+
+    sinal = criar_sinal_preto(
+        dt,
+        resultado["roll"],
+        resultado["color"]
+    )
+
+    sinal_ativo = sinal
+    enviar_sinal(sinal)
 
 
-def gerar_e1_modificada(resultado):
+def registrar_sinal_horario(resultado):
     numero = resultado["roll"]
     cor = resultado["color"]
 
@@ -294,117 +292,153 @@ def gerar_e1_modificada(resultado):
         cor_entrada = 2
         texto_cor = "⚫ PRETO"
 
-    base = dt.replace(second=0, microsecond=0)
-    entrada_base = base + timedelta(minutes=numero)
-    entrada = ajustar_segundos_entrada(entrada_base)
+    if numero == 1:
+        entrada = dt + timedelta(seconds=30)
+    else:
+        base = dt.replace(second=0, microsecond=0)
+        entrada = base + timedelta(minutes=numero)
 
-    registrar_sinal(
-        entrada,
-        cor_entrada,
-        texto_cor,
-        dt,
-        numero,
-        cor
-    )
+    chave = entrada.strftime("%Y-%m-%d %H:%M:%S")
+
+    if entrada < agora_br() - timedelta(seconds=30):
+        print("⚠️ Sinal de horário antigo ignorado:", chave)
+        return
+
+    if chave in horarios_registrados:
+        print("⚠️ Sinal de horário duplicado ignorado:", chave)
+        return
+
+    horarios_registrados.add(chave)
+
+    sinal = {
+        "estrategia": "HORÁRIO",
+        "entrada_dt": entrada,
+        "hora": entrada.strftime("%H:%M:%S"),
+        "cor": cor_entrada,
+        "texto_cor": texto_cor,
+        "extracao": dt.strftime("%H:%M:%S"),
+        "numero": numero,
+        "sorteado": cor_nome(cor),
+        "etapa": 0,
+        "max_gale": 2
+    }
+
+    fila_horarios.append(sinal)
+    fila_horarios.sort(key=lambda x: x["entrada_dt"])
+
+    print(f"📌 Sinal de horário registrado | Entrada {sinal['hora']} | {texto_cor}")
 
 
-def tentar_enviar_proximo_sinal():
-    global sinal_ativo, fila_sinais
+def limpar_fila_horarios():
+    global fila_horarios
+
+    agora = agora_br()
+
+    fila_horarios = [
+        s for s in fila_horarios
+        if s["entrada_dt"] >= agora - timedelta(seconds=30)
+    ]
+
+
+def tentar_enviar_sinal_horario():
+    global sinal_ativo, fila_horarios, MODO
+
+    if MODO != "RECUPERACAO":
+        return
 
     if sinal_ativo is not None:
         return
 
-    agora = agora_br()
+    limpar_fila_horarios()
 
-    fila_sinais = [
-        s for s in fila_sinais
-        if s["entrada_dt"] >= agora - timedelta(seconds=30)
-    ]
-
-    if not fila_sinais:
+    if not fila_horarios:
         return
 
-    fila_sinais.sort(key=lambda x: x["entrada_dt"])
+    fila_horarios.sort(key=lambda x: x["entrada_dt"])
 
-    proximo = fila_sinais[0]
+    proximo = fila_horarios[0]
     momento_envio = proximo["entrada_dt"] - timedelta(seconds=AVISAR_ANTES_SEGUNDOS)
 
-    if agora < momento_envio:
+    if agora_br() < momento_envio:
         return
 
-    sinal_ativo = fila_sinais.pop(0)
-
-    msg = (
-        "💎 *JONBET DOUBLE VIP*\n\n"
-        "📊 *Estratégia:* E1 MODIFICADA\n"
-        f"🕒 *Extração:* {sinal_ativo['extracao']}\n"
-        f"🎲 *Número:* {sinal_ativo['numero']}\n"
-        f"🎨 *Sorteado:* {sinal_ativo['sorteado']}\n\n"
-        f"⏰ *ENTRADA:* {sinal_ativo['hora']}\n"
-        f"🎯 *{sinal_ativo['texto_cor']}*\n"
-        "♻️ *ATÉ G3*"
-    )
-
-    print(msg)
-    enviar(msg)
+    sinal_ativo = fila_horarios.pop(0)
+    enviar_sinal(sinal_ativo)
 
 
-def criar_analise_gx(sinal):
-    analise = {
-        "cor": sinal["cor"],
-        "gale_atual": GALE_MAXIMO + 1,
-        "inicio": agora_br()
-    }
+def finalizar_green(gale):
+    global sinal_ativo, MODO, tentativas_horario
 
-    analises_gx.append(analise)
+    estrategia = sinal_ativo["estrategia"]
 
-    print(f"📊 Análise GX iniciada para cor {cor_nome(sinal['cor'])} a partir do G4")
+    atualizar_gx(gale)
+    registrar_green()
 
+    if gale == 0:
+        texto = "✅ *GREEN SG*"
+    else:
+        texto = f"✅ *GREEN G{gale}*"
 
-def verificar_gx_virtual(resultado):
-    global maior_gx
-
-    if not analises_gx:
-        return
-
-    cor = resultado["color"]
-
-    for analise in analises_gx[:]:
-        if cor == analise["cor"]:
-            gale_win = analise["gale_atual"]
-
-            if gale_win > maior_gx:
-                maior_gx = gale_win
-                print(f"📊 Novo maior GX registrado: G{maior_gx}")
-
-            analises_gx.remove(analise)
-
-        else:
-            analise["gale_atual"] += 1
-
-
-def finalizar(texto, resultado_final):
-    global sinal_ativo
-
-    if resultado_final == "GREEN":
-        enviar_sticker(STICKER_GREEN)
-    elif resultado_final == "LOSS":
-        enviar_sticker(STICKER_LOSS)
-
-    msg = (
-        f"{texto}\n\n"
-        "📊 *APURAÇÃO:*\n\n"
-        f"{texto_sinais_pendentes()}\n\n"
-        f"{texto_stats()}"
-    )
-
-    print(msg)
-    enviar(msg)
+    enviar_apuracao(texto, "GREEN")
 
     sinal_ativo = None
 
+    if estrategia == "HORÁRIO":
+        MODO = "PRETO"
+        tentativas_horario = 0
+        print("✅ Recuperação concluída. Voltando para estratégia PRETO.")
 
-def verificar(resultado):
+    elif estrategia == "PRETO":
+        print("✅ Estratégia PRETO deu GREEN. Continuando no PRETO.")
+
+
+def finalizar_loss():
+    global sinal_ativo, MODO, tentativas_horario
+
+    estrategia = sinal_ativo["estrategia"]
+    max_gale = sinal_ativo["max_gale"]
+
+    atualizar_gx(max_gale)
+
+    if estrategia == "PRETO":
+        print("⛔ Estratégia PRETO perdeu no G5. Iniciando recuperação por horário.")
+
+        enviar(
+            "⛔ *PRETO LOSS G5*\n\n"
+            "🔁 Iniciando recuperação pela estratégia de horário."
+        )
+
+        sinal_ativo = None
+        MODO = "RECUPERACAO"
+        tentativas_horario = 0
+        return
+
+    if estrategia == "HORÁRIO":
+        tentativas_horario += 1
+
+        print(f"⛔ Horário LOSS G2 | Tentativa {tentativas_horario}/2")
+
+        if tentativas_horario >= 2:
+            registrar_loss()
+            enviar_apuracao("⛔ *LOSS*", "LOSS")
+
+            sinal_ativo = None
+            MODO = "PRETO"
+            tentativas_horario = 0
+
+            print("⛔ Perdeu as 2 tentativas de recuperação. Voltando para PRETO.")
+            return
+
+        enviar(
+            "⛔ *HORÁRIO LOSS G2*\n\n"
+            "🔁 Aguardando segunda tentativa de recuperação."
+        )
+
+        sinal_ativo = None
+        return
+
+
+def verificar_resultado_sinal(resultado):
     global sinal_ativo
 
     if sinal_ativo is None:
@@ -420,22 +454,15 @@ def verificar(resultado):
     cor = resultado["color"]
 
     if cor == sinal_ativo["cor"]:
-        if sinal_ativo["etapa"] == 0:
-            registrar_resultado("SG")
-            finalizar("✅ *GREEN SG*", "GREEN")
-        else:
-            registrar_resultado(f"G{sinal_ativo['etapa']}")
-            finalizar(f"✅ *GREEN G{sinal_ativo['etapa']}*", "GREEN")
+        finalizar_green(sinal_ativo["etapa"])
+        return
 
+    sinal_ativo["etapa"] += 1
+
+    if sinal_ativo["etapa"] > sinal_ativo["max_gale"]:
+        finalizar_loss()
     else:
-        if sinal_ativo["etapa"] < GALE_MAXIMO:
-            sinal_ativo["etapa"] += 1
-            sinal_ativo["entrada_dt"] = dt + timedelta(seconds=1)
-            print(f"⏳ Aguardando G{sinal_ativo['etapa']}...")
-        else:
-            registrar_resultado("LOSS")
-            criar_analise_gx(sinal_ativo)
-            finalizar("⛔ *LOSS*", "LOSS")
+        print(f"⏳ Aguardando G{sinal_ativo['etapa']}...")
 
 
 def processar_resultado(resultado, iniciar=False):
@@ -443,22 +470,24 @@ def processar_resultado(resultado, iniciar=False):
         return
 
     processados.add(resultado["id"])
-    salvar_no_historico(resultado)
+
+    dt = hora_br(resultado["created_at"])
+    minuto = dt.minute
+    segundo = dt.second
 
     if iniciar:
         return
 
-    verificar_gx_virtual(resultado)
-    verificar(resultado)
+    verificar_resultado_sinal(resultado)
 
-    dt = hora_br(resultado["created_at"])
-    segundo = dt.second
+    if minuto in MINUTOS_ANALISE and 30 <= segundo <= 59:
+        registrar_sinal_horario(resultado)
 
-    if 30 <= segundo <= 59:
-        gerar_e1_modificada(resultado)
+    if sinal_ativo is None and MODO == "PRETO":
+        iniciar_sinal_preto(resultado)
 
 
-enviar("✅ *Bot iniciado com sucesso!*\n\n🎯 Estratégia ativa: *E1 MODIFICADA ATÉ G3*")
+enviar("✅ *Bot PRETO V2 iniciado com sucesso!*")
 
 primeira_leitura = True
 
@@ -482,6 +511,6 @@ while True:
         for resultado in reversed(dados):
             processar_resultado(resultado)
 
-    tentar_enviar_proximo_sinal()
+    tentar_enviar_sinal_horario()
 
     time.sleep(1)
