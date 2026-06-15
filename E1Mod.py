@@ -8,12 +8,12 @@ CHAT_ID = "-1003965003838"
 URL = "https://jonbet.bet.br/api/singleplayer-originals/originals/roulette_games/recent/1"
 
 MINUTOS_ANALISE = [0, 10, 20, 30, 40, 50]
-AVISAR_ANTES_SEGUNDOS = 15
+AVISAR_ANTES_SEGUNDOS = 60
 
 STICKER_GREEN = "CAACAgEAAxkBAAEBuhtkFBbPbho5iUL3Cw0Zs2WBNdupaAACQgQAAnQVwEe3Q77HvZ8W3y8E"
 STICKER_LOSS = "CAACAgEAAxkBAAEBuh9kFBbVKxciIe1RKvDQBeDu8WfhFAACXwIAAq-xwEfpc4OHHyAliS8E"
 
-MODO = "PRETO"  # PRETO ou RECUPERACAO
+MODO = "PRETO"
 
 sinal_ativo = None
 fila_horarios = []
@@ -222,6 +222,18 @@ def enviar_apuracao(texto, resultado_final):
 
 
 def montar_msg_sinal(sinal):
+    if sinal["estrategia"] == "PRETO":
+        return (
+            "💎 *JONBET DOUBLE VIP*\n\n"
+            "📊 *Estratégia:* E1\n\n"
+            f"🕒 *Extração:* {sinal['extracao']}\n"
+            f"🎲 *Número:* {sinal['numero']}\n"
+            f"🎨 *Sorteado:* {sinal['sorteado']}\n\n"
+            "⏰ *ENTRADA:*\n"
+            f"🎯 *{sinal['texto_cor']}*\n"
+            f"♻️ *ATÉ G{sinal['max_gale']}*"
+        )
+
     return (
         "💎 *JONBET DOUBLE VIP*\n\n"
         f"📊 *Estratégia:* {sinal['estrategia']}\n"
@@ -241,10 +253,12 @@ def enviar_sinal(sinal):
 
 
 def criar_sinal_preto(extracao_dt, numero, cor_sorteada):
+    entrada_dt = agora_br() + timedelta(seconds=1)
+
     return {
         "estrategia": "PRETO",
-        "entrada_dt": agora_br() + timedelta(seconds=1),
-        "hora": (agora_br() + timedelta(seconds=1)).strftime("%H:%M:%S"),
+        "entrada_dt": entrada_dt,
+        "hora": entrada_dt.strftime("%H:%M:%S"),
         "cor": 2,
         "texto_cor": "⚫ PRETO",
         "extracao": extracao_dt.strftime("%H:%M:%S"),
