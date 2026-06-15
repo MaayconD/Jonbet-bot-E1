@@ -226,9 +226,6 @@ def montar_msg_sinal(sinal):
         return (
             "💎 *JONBET DOUBLE VIP*\n\n"
             "📊 *Estratégia:* E1\n\n"
-            f"🕒 *Extração:* {sinal['extracao']}\n"
-            f"🎲 *Número:* {sinal['numero']}\n"
-            f"🎨 *Sorteado:* {sinal['sorteado']}\n\n"
             "⏰ *ENTRADA:*\n"
             f"🎯 *{sinal['texto_cor']}*\n"
             f"♻️ *ATÉ G{sinal['max_gale']}*"
