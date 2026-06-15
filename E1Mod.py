@@ -33,11 +33,11 @@ maior_sequencia_loss = 0
 maior_gale = 0
 
 PADROES = {
-    (2, 1, 1, 2): {"nome": "⚫🟢🟢⚫", "cor": 1, "texto": "🟢 VERDE"},
+    (2, 1, 1, 2): {"nome": "⚫🟢🟢⚫", "cor": 2, "texto": "⚫ PRETO"},
     (1, 2, 2, 1): {"nome": "🟢⚫⚫🟢", "cor": 2, "texto": "⚫ PRETO"},
     (2, 1, 2, 1): {"nome": "⚫🟢⚫🟢", "cor": 2, "texto": "⚫ PRETO"},
-    (1, 2, 1, 2): {"nome": "🟢⚫🟢⚫", "cor": 1, "texto": "🟢 VERDE"},
-    (1, 1, 2, 2): {"nome": "🟢🟢⚫⚫", "cor": 1, "texto": "🟢 VERDE"},
+    (1, 2, 1, 2): {"nome": "🟢⚫🟢⚫", "cor": 2, "texto": "⚫ PRETO"},
+    (1, 1, 2, 2): {"nome": "🟢🟢⚫⚫", "cor": 2, "texto": "⚫ PRETO"},
     (2, 2, 1, 1): {"nome": "⚫⚫🟢🟢", "cor": 2, "texto": "⚫ PRETO"},
 }
 
