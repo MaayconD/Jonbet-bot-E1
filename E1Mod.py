@@ -18,12 +18,11 @@ sinal_ativo = None
 cor_atual = None
 processados = set()
 
-stats = {
-    "GREEN": 0,
-    "LOSS": 0
-}
+stats = {"GREEN": 0, "LOSS": 0}
 
 nivel_loss_atual = 0
+maior_seq = 0
+hora_maior_seq = "--:--"
 maior_gale = 0
 data_stats = None
 
@@ -66,22 +65,6 @@ def hora_br(data_api):
     ).replace(tzinfo=None)
 
 
-def cor_nome(cor):
-    return {
-        0: "⚪ BRANCO",
-        1: "🟢 VERDE",
-        2: "⚫ PRETO"
-    }.get(cor, str(cor))
-
-
-def texto_cor(cor):
-    if cor == COR_PRETO:
-        return "⚫ PRETO"
-    if cor == COR_VERDE:
-        return "🟢 VERDE"
-    return str(cor)
-
-
 def buscar_resultados():
     try:
         headers = {
@@ -104,8 +87,17 @@ def buscar_resultados():
         return None
 
 
+def texto_cor(cor):
+    if cor == COR_PRETO:
+        return "⚫ PRETO"
+    if cor == COR_VERDE:
+        return "🟢 VERDE"
+    return str(cor)
+
+
 def verificar_virada_dia():
-    global data_stats, stats, nivel_loss_atual, maior_gale, sinal_ativo, cor_atual
+    global data_stats, stats, nivel_loss_atual, maior_seq
+    global hora_maior_seq, maior_gale, sinal_ativo, cor_atual
 
     hoje = agora_br().date()
 
@@ -116,6 +108,8 @@ def verificar_virada_dia():
     if hoje != data_stats:
         stats = {"GREEN": 0, "LOSS": 0}
         nivel_loss_atual = 0
+        maior_seq = 0
+        hora_maior_seq = "--:--"
         maior_gale = 0
         sinal_ativo = None
         cor_atual = None
@@ -135,9 +129,10 @@ def assertividade():
 
 def texto_stats():
     return (
-        "📈 *GERAL*\n"
-        f"GREEN: {stats['GREEN']:02d} | LOSS: {stats['LOSS']:02d}\n"
-        f"SEQ: {nivel_loss_atual:02d}/{NIVEL_MAXIMO:02d} | GX: {maior_gale:02d}\n\n"
+        "📈 *GERAL*\n\n"
+        f"GREEN: {stats['GREEN']:02d} | LOSS: {stats['LOSS']:02d}\n\n"
+        f"SEQ: {nivel_loss_atual:02d}/{NIVEL_MAXIMO:02d} | GX: {maior_gale:02d}\n"
+        f"SEQ MAX: {maior_seq:02d}/{NIVEL_MAXIMO:02d} | {hora_maior_seq}\n\n"
         f"🎯 Assertividade: {assertividade():.2f}%"
     )
 
@@ -195,6 +190,14 @@ def trocar_cor():
         cor_atual = COR_PRETO
 
 
+def atualizar_seq_max():
+    global maior_seq, hora_maior_seq
+
+    if nivel_loss_atual > maior_seq:
+        maior_seq = nivel_loss_atual
+        hora_maior_seq = agora_br().strftime("%H:%M")
+
+
 def finalizar_green(gale):
     global sinal_ativo, nivel_loss_atual
 
@@ -203,7 +206,7 @@ def finalizar_green(gale):
 
     nivel_loss_atual = 0
 
-    texto = "✅ *GREEN SG*" if gale == 0 else f"✅ *GREEN G{gale}"
+    texto = "✅ *GREEN SG*" if gale == 0 else f"✅ *GREEN G{gale}*"
 
     enviar_apuracao(texto, "GREEN")
 
@@ -220,12 +223,13 @@ def finalizar_loss():
     atualizar_gx(1)
 
     nivel_loss_atual += 1
-
-    if nivel_loss_atual > NIVEL_MAXIMO:
-        nivel_loss_atual = 1
-        print("🔄 Níveis reiniciados após atingir o máximo.")
+    atualizar_seq_max()
 
     enviar_apuracao("⛔ *LOSS*", "LOSS")
+
+    if nivel_loss_atual >= NIVEL_MAXIMO:
+        nivel_loss_atual = 0
+        print("🔄 Níveis reiniciados após atingir o máximo.")
 
     sinal_ativo = None
 
