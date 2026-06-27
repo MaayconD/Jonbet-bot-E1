@@ -10,22 +10,26 @@ URL = "https://jonbet.bet.br/api/singleplayer-originals/originals/roulette_games
 STICKER_GREEN = "CAACAgEAAxkBAAEBuhtkFBbPbho5iUL3Cw0Zs2WBNdupaAACQgQAAnQVwEe3Q77HvZ8W3y8E"
 STICKER_LOSS = "CAACAgEAAxkBAAEBuh9kFBbVKxciIe1RKvDQBeDu8WfhFAACXwIAAq-xwEfpc4OHHyAliS8E"
 
-COR_BRANCO = 0
 COR_VERDE = 1
 COR_PRETO = 2
 
-NIVEL_MAXIMO = 6
+# VERSÃO 1: G2 E G8
+NIVEIS = {
+    1: 2,
+    2: 8
+}
+
+# VERSÃO 2: G2 E G9
+# Para usar G2 e G9, comente o bloco acima e descomente este:
+# NIVEIS = {
+#     1: 2,
+#     2: 9
+# }
+
+NIVEL_MAXIMO = 2
 
 sinal_ativo = None
 cor_atual = None
-branco_na_operacao = False
-
-modo_virtual = False
-nivel_virtual = 3
-cor_virtual = None
-etapa_virtual = 0
-branco_virtual = False
-
 processados = set()
 
 stats = {"GREEN": 0, "LOSS": 0}
@@ -94,8 +98,6 @@ def texto_cor(cor):
         return "⚫ PRETO"
     if cor == COR_VERDE:
         return "🟢 VERDE"
-    if cor == COR_BRANCO:
-        return "⚪ BRANCO"
     return str(cor)
 
 
@@ -108,8 +110,6 @@ def trocar_cor(cor):
 def verificar_virada_dia():
     global data_stats, stats, nivel_loss_atual, maior_seq
     global hora_maior_seq, maior_gale, sinal_ativo, cor_atual
-    global branco_na_operacao, modo_virtual, nivel_virtual
-    global cor_virtual, etapa_virtual, branco_virtual
 
     hoje = agora_br().date()
 
@@ -123,17 +123,8 @@ def verificar_virada_dia():
         maior_seq = 0
         hora_maior_seq = "--:--"
         maior_gale = 0
-
         sinal_ativo = None
         cor_atual = None
-        branco_na_operacao = False
-
-        modo_virtual = False
-        nivel_virtual = 3
-        cor_virtual = None
-        etapa_virtual = 0
-        branco_virtual = False
-
         data_stats = hoje
 
         enviar("🔄 *Novo dia iniciado! Estatísticas zeradas.*")
@@ -201,50 +192,36 @@ def nivel_proxima_entrada():
 def enviar_sinal():
     global sinal_ativo
 
+    nivel = nivel_proxima_entrada()
+    max_gale = NIVEIS[nivel]
+
     msg = (
         "💎 *JONBET DOUBLE VIP*\n\n"
-        "📊 *Estratégia:* COR FIXA G1\n\n"
+        "📊 *Estratégia:* COR FIXA\n\n"
         "⏰ *ENTRADA:*\n"
         f"🎯 *{texto_cor(cor_atual)}*\n"
-        "♻️ *ATÉ G1*\n\n"
-        f"📌 *NÍVEL:* {nivel_proxima_entrada():02d}/{NIVEL_MAXIMO:02d}"
+        f"♻️ *ATÉ G{max_gale}*\n\n"
+        f"📌 *NÍVEL:* {nivel:02d}/{NIVEL_MAXIMO:02d}"
     )
 
     sinal_ativo = {
         "cor": cor_atual,
         "etapa": 0,
-        "max_gale": 1
+        "max_gale": max_gale,
+        "nivel": nivel
     }
 
     print(msg)
     enviar(msg)
 
 
-def iniciar_virtual(nivel_inicial):
-    global modo_virtual, nivel_virtual, cor_virtual
-    global etapa_virtual, branco_virtual, sinal_ativo
-
-    modo_virtual = True
-    nivel_virtual = nivel_inicial
-    cor_virtual = cor_atual
-    etapa_virtual = 0
-    branco_virtual = False
-    sinal_ativo = None
-
-    enviar(
-        f"🔍 *NÍVEL {nivel_virtual:02d} VIRTUAL INICIADO*\n"
-        f"🎯 {texto_cor(cor_virtual)}"
-    )
-
-
 def finalizar_green(gale):
-    global sinal_ativo, nivel_loss_atual, branco_na_operacao
+    global sinal_ativo, nivel_loss_atual
 
     stats["GREEN"] += 1
     atualizar_gx(gale)
 
     nivel_loss_atual = 0
-    branco_na_operacao = False
 
     texto = "✅ *GREEN SG*" if gale == 0 else f"✅ *GREEN G{gale}*"
 
@@ -257,10 +234,10 @@ def finalizar_green(gale):
 
 
 def finalizar_loss():
-    global sinal_ativo, nivel_loss_atual, branco_na_operacao, cor_atual
+    global sinal_ativo, nivel_loss_atual, cor_atual
 
     stats["LOSS"] += 1
-    atualizar_gx(1)
+    atualizar_gx(sinal_ativo["max_gale"])
 
     nivel_loss_atual += 1
     atualizar_seq_max()
@@ -273,108 +250,30 @@ def finalizar_loss():
 
     sinal_ativo = None
 
-    if branco_na_operacao:
-        print(f"⚪ Branco saiu na operação. Mantendo a cor {texto_cor(cor_atual)}.")
-    else:
-        cor_atual = trocar_cor(cor_atual)
-        print(f"⛔ LOSS sem branco. Alternando para {texto_cor(cor_atual)}.")
-
-    branco_na_operacao = False
-
-    if nivel_loss_atual in [2, 4]:
-        proximo_nivel = nivel_loss_atual + 1
-
-        print(
-            f"🔍 Pausa virtual ativada após o nível {nivel_loss_atual:02d}. "
-            f"Aguardando GREEN virtual para liberar nível {proximo_nivel:02d}."
-        )
-
-        iniciar_virtual(proximo_nivel)
-        return
+    cor_atual = trocar_cor(cor_atual)
+    print(f"⛔ LOSS. Alternando para {texto_cor(cor_atual)}.")
 
     enviar_sinal()
 
 
-def processar_virtual(resultado):
-    global modo_virtual, nivel_virtual, cor_virtual
-    global etapa_virtual, branco_virtual, cor_atual
-
-    cor_resultado = resultado["color"]
-
-    if cor_resultado == COR_BRANCO:
-        branco_virtual = True
-
-    if etapa_virtual == 0:
-        if cor_resultado == cor_virtual:
-            enviar(f"🔍 *NÍVEL {nivel_virtual:02d} VIRTUAL: GREEN*")
-
-            modo_virtual = False
-            cor_atual = cor_virtual
-            etapa_virtual = 0
-            branco_virtual = False
-
-            print(f"✅ Virtual deu GREEN. Liberando nível {nivel_loss_atual + 1:02d} real.")
-            enviar_sinal()
-            return
-
-        etapa_virtual = 1
-        print(f"🔍 Nível {nivel_virtual:02d} virtual aguardando G1 virtual...")
-        return
-
-    if etapa_virtual == 1:
-        if cor_resultado == cor_virtual:
-            enviar(f"🔍 *NÍVEL {nivel_virtual:02d} VIRTUAL: GREEN*")
-
-            modo_virtual = False
-            cor_atual = cor_virtual
-            etapa_virtual = 0
-            branco_virtual = False
-
-            print(f"✅ Virtual deu GREEN no G1. Liberando nível {nivel_loss_atual + 1:02d} real.")
-            enviar_sinal()
-            return
-
-        enviar(f"🔍 *NÍVEL {nivel_virtual:02d} VIRTUAL: LOSS*")
-
-        if branco_virtual:
-            print(f"⚪ Branco saiu no virtual. Mantendo cor {texto_cor(cor_virtual)}.")
-        else:
-            cor_virtual = trocar_cor(cor_virtual)
-            print(f"⛔ Virtual LOSS sem branco. Alternando para {texto_cor(cor_virtual)}.")
-
-        nivel_virtual += 1
-        etapa_virtual = 0
-        branco_virtual = False
-
-        enviar(
-            f"🔍 *NÍVEL {nivel_virtual:02d} VIRTUAL INICIADO*\n"
-            f"🎯 {texto_cor(cor_virtual)}"
-        )
-
-
 def verificar_resultado_sinal(resultado):
-    global sinal_ativo, branco_na_operacao
+    global sinal_ativo
 
     if sinal_ativo is None:
         return
 
     cor_resultado = resultado["color"]
 
-    if cor_resultado == COR_BRANCO:
-        branco_na_operacao = True
+    if cor_resultado == sinal_ativo["cor"]:
+        finalizar_green(sinal_ativo["etapa"])
+        return
 
-    if sinal_ativo["etapa"] == 0:
-        if cor_resultado == sinal_ativo["cor"]:
-            finalizar_green(0)
-        else:
-            sinal_ativo["etapa"] = 1
-            print("⏳ Aguardando G1...")
+    sinal_ativo["etapa"] += 1
 
-    elif sinal_ativo["etapa"] == 1:
-        if cor_resultado == sinal_ativo["cor"]:
-            finalizar_green(1)
-        else:
-            finalizar_loss()
+    if sinal_ativo["etapa"] > sinal_ativo["max_gale"]:
+        finalizar_loss()
+    else:
+        print(f"⏳ Aguardando G{sinal_ativo['etapa']}...")
 
 
 def processar_resultado(resultado, iniciar=False):
@@ -388,13 +287,9 @@ def processar_resultado(resultado, iniciar=False):
     if iniciar:
         return
 
-    if modo_virtual:
-        processar_virtual(resultado)
-        return
-
     verificar_resultado_sinal(resultado)
 
-    if sinal_ativo is None and cor_atual is None and not modo_virtual:
+    if sinal_ativo is None and cor_atual is None:
         cor = resultado["color"]
 
         if cor == COR_PRETO:
@@ -403,7 +298,7 @@ def processar_resultado(resultado, iniciar=False):
             enviar_sinal()
 
 
-enviar("✅ *Bot COR FIXA G1 com virtual iniciado com sucesso!*")
+enviar("✅ *Bot COR FIXA iniciado com sucesso!*")
 
 primeira_leitura = True
 
