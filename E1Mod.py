@@ -11,25 +11,16 @@ STICKER_GREEN = "CAACAgEAAxkBAAEBuhtkFBbPbho5iUL3Cw0Zs2WBNdupaAACQgQAAnQVwEe3Q77
 STICKER_LOSS = "CAACAgEAAxkBAAEBuh9kFBbVKxciIe1RKvDQBeDu8WfhFAACXwIAAq-xwEfpc4OHHyAliS8E"
 
 COR_VERDE = 1
-COR_PRETO = 2
 
-# VERSÃO 1: G2 E G8
 NIVEIS = {
-    1: 2,
-    2: 8
+    1: 1,
+    2: 9
 }
-
-# VERSÃO 2: G2 E G9
-# Para usar G2 e G9, comente o bloco acima e descomente este:
-# NIVEIS = {
-#     1: 2,
-#     2: 9
-# }
 
 NIVEL_MAXIMO = 2
 
 sinal_ativo = None
-cor_atual = None
+aguardando_verde = True
 processados = set()
 
 stats = {"GREEN": 0, "LOSS": 0}
@@ -93,23 +84,9 @@ def buscar_resultados():
         return None
 
 
-def texto_cor(cor):
-    if cor == COR_PRETO:
-        return "⚫ PRETO"
-    if cor == COR_VERDE:
-        return "🟢 VERDE"
-    return str(cor)
-
-
-def trocar_cor(cor):
-    if cor == COR_PRETO:
-        return COR_VERDE
-    return COR_PRETO
-
-
 def verificar_virada_dia():
     global data_stats, stats, nivel_loss_atual, maior_seq
-    global hora_maior_seq, maior_gale, sinal_ativo, cor_atual
+    global hora_maior_seq, maior_gale, sinal_ativo, aguardando_verde
 
     hoje = agora_br().date()
 
@@ -124,7 +101,7 @@ def verificar_virada_dia():
         hora_maior_seq = "--:--"
         maior_gale = 0
         sinal_ativo = None
-        cor_atual = None
+        aguardando_verde = True
         data_stats = hoje
 
         enviar("🔄 *Novo dia iniciado! Estatísticas zeradas.*")
@@ -132,10 +109,8 @@ def verificar_virada_dia():
 
 def assertividade():
     total = stats["GREEN"] + stats["LOSS"]
-
     if total == 0:
         return 0
-
     return (stats["GREEN"] / total) * 100
 
 
@@ -190,33 +165,35 @@ def nivel_proxima_entrada():
 
 
 def enviar_sinal():
-    global sinal_ativo
+    global sinal_ativo, aguardando_verde
 
     nivel = nivel_proxima_entrada()
     max_gale = NIVEIS[nivel]
 
     msg = (
         "💎 *JONBET DOUBLE VIP*\n\n"
-        "📊 *Estratégia:* COR FIXA\n\n"
+        "📊 *Estratégia:* VERDE FIXO\n\n"
         "⏰ *ENTRADA:*\n"
-        f"🎯 *{texto_cor(cor_atual)}*\n"
+        "🎯 *🟢 VERDE*\n"
         f"♻️ *ATÉ G{max_gale}*\n\n"
         f"📌 *NÍVEL:* {nivel:02d}/{NIVEL_MAXIMO:02d}"
     )
 
     sinal_ativo = {
-        "cor": cor_atual,
+        "cor": COR_VERDE,
         "etapa": 0,
         "max_gale": max_gale,
         "nivel": nivel
     }
+
+    aguardando_verde = False
 
     print(msg)
     enviar(msg)
 
 
 def finalizar_green(gale):
-    global sinal_ativo, nivel_loss_atual
+    global sinal_ativo, nivel_loss_atual, aguardando_verde
 
     stats["GREEN"] += 1
     atualizar_gx(gale)
@@ -228,13 +205,14 @@ def finalizar_green(gale):
     enviar_apuracao(texto, "GREEN")
 
     sinal_ativo = None
+    aguardando_verde = False
 
-    print("✅ GREEN. Mantendo a mesma cor.")
+    print("✅ GREEN. Enviando nova entrada VERDE imediatamente.")
     enviar_sinal()
 
 
 def finalizar_loss():
-    global sinal_ativo, nivel_loss_atual, cor_atual
+    global sinal_ativo, nivel_loss_atual, aguardando_verde
 
     stats["LOSS"] += 1
     atualizar_gx(sinal_ativo["max_gale"])
@@ -246,14 +224,12 @@ def finalizar_loss():
 
     if nivel_loss_atual >= NIVEL_MAXIMO:
         nivel_loss_atual = 0
-        print("🔄 Níveis reiniciados após atingir o máximo.")
+        print("🔄 Perdeu o nível 02. Reiniciando para nível 01.")
 
     sinal_ativo = None
+    aguardando_verde = True
 
-    cor_atual = trocar_cor(cor_atual)
-    print(f"⛔ LOSS. Alternando para {texto_cor(cor_atual)}.")
-
-    enviar_sinal()
+    print("⏸️ LOSS. Aguardando sair VERDE para enviar nova entrada.")
 
 
 def verificar_resultado_sinal(resultado):
@@ -277,7 +253,7 @@ def verificar_resultado_sinal(resultado):
 
 
 def processar_resultado(resultado, iniciar=False):
-    global cor_atual
+    global aguardando_verde
 
     if resultado["id"] in processados:
         return
@@ -289,16 +265,15 @@ def processar_resultado(resultado, iniciar=False):
 
     verificar_resultado_sinal(resultado)
 
-    if sinal_ativo is None and cor_atual is None:
+    if sinal_ativo is None and aguardando_verde:
         cor = resultado["color"]
 
-        if cor == COR_PRETO:
-            cor_atual = COR_PRETO
-            print("⚫ Preto detectado. Iniciando estratégia no PRETO.")
+        if cor == COR_VERDE:
+            print("🟢 Verde detectado. Enviando entrada.")
             enviar_sinal()
 
 
-enviar("✅ *Bot COR FIXA iniciado com sucesso!*")
+enviar("✅ *Bot VERDE FIXO G1/G9 iniciado com sucesso!*")
 
 primeira_leitura = True
 
@@ -316,7 +291,7 @@ while True:
             processar_resultado(resultado, iniciar=True)
 
         primeira_leitura = False
-        print("✅ Histórico inicial carregado. Aguardando sair PRETO para iniciar...")
+        print("✅ Histórico inicial carregado. Aguardando sair VERDE para iniciar...")
 
     else:
         for resultado in reversed(dados):
